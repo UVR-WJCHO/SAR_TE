@@ -182,8 +182,8 @@ class SAR_TE(nn.Module):
         self.extract_mid = nn.Sequential(backbone.conv1, backbone.bn1, backbone.relu,
                                          backbone.maxpool, backbone.layer1, backbone.layer2)
         self.extract_prev = nn.Sequential(
-            nn.Conv2d(1, 16, 5, padding=2,stride=2), nn.LeakyReLU(0.1),
-            nn.Conv2d(16, 32, 5, padding=2, stride=1), nn.LeakyReLU(0.1)
+            nn.Conv2d(1, 16, 5, padding=2,stride=2), nn.BatchNorm2d(16), nn.LeakyReLU(0.1),
+            nn.Conv2d(16, 32, 5, padding=2, stride=1), nn.BatchNorm2d(32), nn.LeakyReLU(0.1)
         )
 
         self.extract_high = []
@@ -203,15 +203,13 @@ class SAR_TE(nn.Module):
                     self.fuse.append(nn.Conv2d(channel // 4 + cfg.num_joint * 2, channel // 4, 1))
 
         self.extract_sim = nn.Sequential(
-            nn.Conv2d(channel // 4 + 32, channel // 4, 1), nn.LeakyReLU(0.1),
-            nn.Conv2d(channel // 4, channel // 8, 1), nn.LeakyReLU(0.1),
-            nn.Conv2d(channel // 8, 32, 1), nn.LeakyReLU(0.1),
+            nn.Conv2d(channel // 4 + 32, channel // 8, 1), nn.BatchNorm2d(channel // 8), nn.LeakyReLU(0.1),
+            nn.Conv2d(channel // 8, 32, 1), nn.BatchNorm2d(32), nn.LeakyReLU(0.1)
         )
 
         self.extract_weight = nn.Sequential(
-            nn.Conv2d(32, 16, 5, padding=2, stride=4), nn.LeakyReLU(0.1),
-            nn.Conv2d(16, 4, 5, padding=2, stride=4), nn.LeakyReLU(0.1),
-            nn.Conv2d(4, 1, 5, padding=2, stride=2), nn.LeakyReLU(0.1),
+            nn.Conv2d(32, 16, 5, padding=2, stride=2), nn.BatchNorm2d(16), nn.LeakyReLU(0.1), nn.MaxPool2d(2),  # (batch, 16, 8, 8)
+            nn.Conv2d(16, 1, 5, padding=2, stride=4), nn.BatchNorm2d(1), nn.LeakyReLU(0.1), nn.MaxPool2d(2)
         )
 
         self.latent_encoder = nn.Sequential(nn.Conv2d(channel // 4 + 32, channel // 4, 1))

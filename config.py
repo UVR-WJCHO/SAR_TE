@@ -13,7 +13,7 @@ class Config:
     load_db = False
 
     # network
-    backbone = 'resnet34'
+    backbone = 'resnet18'
     num_stage = 2
     num_FMs = 8
     feature_size = 64
@@ -27,11 +27,10 @@ class Config:
     # training
     batch_size = 64
     lr = 3e-4
-    weight_decay = 0.08     # defalut : 0.1
     total_epoch = 50
     input_img_shape = (256, 256)
     depth_box = 0.3
-    num_worker = 16
+    num_worker = 8
     # -------------
     save_epoch = 1
     eval_interval = 1
@@ -42,7 +41,7 @@ class Config:
     continue_train = False
     vis = True
     # -------------
-    experiment_name = exp + '_{}'.format(mode_addPos) + '_{}'.format(backbone) + '_Batch{}'.format(batch_size) + \
+    experiment_name = exp + '_{}'.format(model_name) + '_{}'.format(backbone) + '_Batch{}'.format(batch_size) + \
                       '_lr{}'.format(lr) + '_Epochs{}'.format(total_epoch)
 
 cfg = Config()

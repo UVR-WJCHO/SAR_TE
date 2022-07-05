@@ -50,8 +50,6 @@ def json_save(p, d):
         json.dump(d, f1)
 
 
-
-
 def projectPoints(xyz, K):
     """ Project 3D coordinates into image space. """
     xyz = np.array(xyz)

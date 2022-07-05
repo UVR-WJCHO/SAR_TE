@@ -17,7 +17,7 @@ class Trainer:
         self.logger.info('Start training: %s' % ('train_' + cfg.experiment_name))
 
     def get_optimizer(self, model):
-        optimizer = optim.AdamW([{'params': model.parameters(), 'initial_lr': cfg.lr}], cfg.lr, weight_decay=cfg.weight_decay)
+        optimizer = optim.AdamW([{'params': model.parameters(), 'initial_lr': cfg.lr}], cfg.lr)
         self.logger.info('The parameters of the model are added to the AdamW optimizer.')
         return optimizer
 

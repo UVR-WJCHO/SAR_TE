@@ -1,6 +1,6 @@
 import random
 
-from data.processing import xyz2uvd, uvd2xyz, read_img, load_db_annotation, augmentation, cv2pil
+from data.processing import xyz2uvd, uvd2xyz, read_img, load_db_annotation, augmentation, cv2pil, json_save, json_load
 from torch.utils.data import Dataset
 import numpy as np
 import torchvision.transforms as standard
@@ -11,7 +11,8 @@ from data.processing import get_focal_pp
 from utils.visualize import render_mesh_multi_views, draw_2d_skeleton, render_mesh
 from utils.mano import MANO
 import cv2
-
+import pickle
+import time
 
 
 
@@ -65,9 +66,32 @@ class FreiHAND(Dataset):
         self.mode = mode
         assert self.mode in ['training', 'evaluation'], 'mode error'
 
-        self.anno_all = load_db_annotation(root, self.mode)
+        if self.mode == 'training':
+            if cfg.small_dataset:
+                uvd_path = os.path.join(root, '%s_processed_uvd_small.json' % self.mode)
+            else:
+                uvd_path = os.path.join(root, '%s_processed_uvd.json' % self.mode)
+
+            if cfg.load_db:
+                # load annotations
+                self.anno_all = load_db_annotation(root, self.mode)
+                uvd_list = list()
+                for idx in range(len(self.anno_all)):
+                    K, mesh_xyz, pose_xyz, scale = self.anno_all[idx]
+                    K, mesh_xyz, pose_xyz, scale = [np.array(x) for x in [K, mesh_xyz, pose_xyz, scale]]
+                    # concat mesh and pose label
+                    all_xyz = np.concatenate((mesh_xyz, pose_xyz), axis=0)
+                    all_uvd = xyz2uvd(all_xyz, K)
+
+                    all_uvd_list = all_uvd.tolist()
+                    uvd_list.append(all_uvd_list)
+                json_save(uvd_path, uvd_list)
+            else:
+                self.anno_all = np.array(json_load(uvd_path))
 
         if self.mode == 'evaluation':
+            self.anno_all = load_db_annotation(root, self.mode)
+
             root = os.path.join(root, 'bbox_root_freihand_output.json')
             self.root_result = []
             with open(root) as f:
@@ -78,9 +102,10 @@ class FreiHAND(Dataset):
         self.transform = standard.Compose([standard.ToTensor(), standard.Normalize(*mean_std)])
         self.versions = ['gs', 'hom', 'sample', 'auto']
 
-        # mano
-        # self.mano = MANO()
-        # self.face = self.mano.face
+        self.flag_fake = False
+        if cfg.model_name is not 'SAR':
+            self.flag_fake = True
+
 
     def __getitem__(self, idx):
         if self.mode == 'training':
@@ -88,6 +113,8 @@ class FreiHAND(Dataset):
         else:
             version = 'gs'
         idx = idx % len(self.anno_all)
+        all_uvd = self.anno_all[idx]
+
         img = read_img(idx, self.root, self.mode, version)
         bbox_size = 130
         bbox = [112 - bbox_size//2, 112 - bbox_size//2, bbox_size, bbox_size]
@@ -108,33 +135,29 @@ class FreiHAND(Dataset):
         img = self.transform(img)
 
         if self.mode == 'training':
-            K, mesh_xyz, pose_xyz, scale = self.anno_all[idx]
-            K, mesh_xyz, pose_xyz, scale = [np.array(x) for x in [K, mesh_xyz, pose_xyz, scale]]
-            # concat mesh and pose label
-            all_xyz = np.concatenate((mesh_xyz, pose_xyz), axis=0)
-            all_uvd = xyz2uvd(all_xyz, K)
             # affine transform x,y coordinates
             uv1 = np.concatenate((all_uvd[:, :2], np.ones_like(all_uvd[:, :1])), 1)
             all_uvd[:, :2] = np.dot(img2bb_trans, uv1.transpose(1, 0)).transpose(1, 0)[:, :2]
 
             ### Generate fake prev pose ###
-            pose_uvd = np.copy(all_uvd[cfg.num_vert:, :])   # (21, 3)
+            if self.flag_fake:
+                pose_uvd = np.copy(all_uvd[cfg.num_vert:, :])   # (21, 3)
 
-            # img_debug = draw_2d_skeleton(img_cv, pose_uvd[:, :-1])
-            # cv2.imshow("joint", np.array(img_debug, dtype=np.uint8))
-            # cv2.waitKey(0)
+                # img_debug = draw_2d_skeleton(img_cv, pose_uvd[:, :-1])
+                # cv2.imshow("joint", np.array(img_debug, dtype=np.uint8))
+                # cv2.waitKey(0)
 
-            state = int(np.random.choice(3, 1, p=[0.3, 0.4, 0.3])[0])  # [same prev pose, slight noise, large noise]
-            aug_weight = 0.0
-            if state is 0:
-                prev_pose = np.copy(pose_uvd)
-            elif state is 1:
-                aug_weight = 1.0
-                prev_pose = _generateFakepose(pose_uvd, weight=aug_weight)
-            else:
-                aug_weight = np.random.uniform(2., 5.)
-                prev_pose = _generateFakepose(pose_uvd, weight=aug_weight)
-            prev_heatmap = _generateFakeHeatmap(prev_pose)
+                state = int(np.random.choice(3, 1, p=[0.3, 0.4, 0.3])[0])  # [same prev pose, slight noise, large noise]
+                aug_weight = 0.0
+                if state is 0:
+                    prev_pose = np.copy(pose_uvd)
+                elif state is 1:
+                    aug_weight = 1.0
+                    prev_pose = _generateFakepose(pose_uvd, weight=aug_weight)
+                else:
+                    aug_weight = np.random.uniform(2., 5.)
+                    prev_pose = _generateFakepose(pose_uvd, weight=aug_weight)
+                prev_heatmap = _generateFakeHeatmap(prev_pose)
 
             # wrist is the relative joint
             root_depth = all_uvd[cfg.num_vert:cfg.num_vert+1, 2:3].copy()
@@ -144,9 +167,14 @@ class FreiHAND(Dataset):
             # img normalize
             all_uvd[:, :2] = all_uvd[:, :2] / (cfg.input_img_shape[0] // 2) - 1
 
-            inputs = {'img': np.float32(img), 'prev_heatmap': np.float32(prev_heatmap)}
-            targets = {'mesh_pose_uvd': np.float32(all_uvd), 'aug_weight': np.float32(aug_weight)}
-            meta_info = {}
+            if self.flag_fake:
+                inputs = {'img': np.float32(img), 'prev_heatmap': np.float32(prev_heatmap)}
+                targets = {'mesh_pose_uvd': np.float32(all_uvd), 'aug_weight': np.float32(aug_weight)}
+                meta_info = {}
+            else:
+                inputs = {'img': np.float32(img)}
+                targets = {'mesh_pose_uvd': np.float32(all_uvd)}
+                meta_info = {}
         else:
             K, scale = self.anno_all[idx]
             K, scale = [np.array(x) for x in [K, scale]]
