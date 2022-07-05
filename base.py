@@ -84,6 +84,10 @@ class Trainer:
         self.schedule = schedule
         self.logger.info("The model is made successfully.")
 
+        param_num = sum(p.numel() for p in model.parameters())
+        print("model parameter num : ", param_num)
+
+
 class Tester:
     def __init__(self):
         log_folder = os.path.join(cfg.output_root, 'log')

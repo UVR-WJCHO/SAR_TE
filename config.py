@@ -10,6 +10,7 @@ class Config:
 
     # flags
     small_dataset = False
+    load_db = False
 
     # network
     backbone = 'resnet34'
@@ -30,7 +31,7 @@ class Config:
     total_epoch = 50
     input_img_shape = (256, 256)
     depth_box = 0.3
-    num_worker = 8
+    num_worker = 16
     # -------------
     save_epoch = 1
     eval_interval = 1

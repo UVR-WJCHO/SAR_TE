@@ -11,8 +11,7 @@ from data.processing import get_focal_pp
 from utils.visualize import render_mesh_multi_views, draw_2d_skeleton, render_mesh
 from utils.mano import MANO
 import cv2
-import pickle
-import time
+
 
 
 
@@ -66,34 +65,9 @@ class FreiHAND(Dataset):
         self.mode = mode
         assert self.mode in ['training', 'evaluation'], 'mode error'
 
-        if self.mode == 'training':
-            if cfg.small_dataset:
-                uvd_path = os.path.join(root, '%s_processed_uvd_small.pkl' % self.mode)
-            else:
-                uvd_path = os.path.join(root, '%s_processed_uvd.pkl' % self.mode)
-
-            if cfg.load_db:
-                # load annotations
-                self.anno_all = load_db_annotation(root, self.mode)
-                uvd_list = []
-                for idx in range(len(self.anno_all)):
-                    K, mesh_xyz, pose_xyz, scale = self.anno_all[idx]
-                    K, mesh_xyz, pose_xyz, scale = [np.array(x) for x in [K, mesh_xyz, pose_xyz, scale]]
-                    # concat mesh and pose label
-                    all_xyz = np.concatenate((mesh_xyz, pose_xyz), axis=0)
-                    all_uvd = xyz2uvd(all_xyz, K)
-                    uvd_list.append(all_uvd)
-                with open(uvd_path, 'wb') as f:
-                    pickle.dump(uvd_list, f)
-                self.anno_all = uvd_list
-
-            else:
-                with open(uvd_path, 'rb') as f:
-                    self.anno_all = pickle.load(f)
+        self.anno_all = load_db_annotation(root, self.mode)
 
         if self.mode == 'evaluation':
-            self.anno_all = load_db_annotation(root, self.mode)
-
             root = os.path.join(root, 'bbox_root_freihand_output.json')
             self.root_result = []
             with open(root) as f:
@@ -114,8 +88,6 @@ class FreiHAND(Dataset):
         else:
             version = 'gs'
         idx = idx % len(self.anno_all)
-        all_uvd = self.anno_all[idx]
-
         img = read_img(idx, self.root, self.mode, version)
         bbox_size = 130
         bbox = [112 - bbox_size//2, 112 - bbox_size//2, bbox_size, bbox_size]
@@ -136,6 +108,11 @@ class FreiHAND(Dataset):
         img = self.transform(img)
 
         if self.mode == 'training':
+            K, mesh_xyz, pose_xyz, scale = self.anno_all[idx]
+            K, mesh_xyz, pose_xyz, scale = [np.array(x) for x in [K, mesh_xyz, pose_xyz, scale]]
+            # concat mesh and pose label
+            all_xyz = np.concatenate((mesh_xyz, pose_xyz), axis=0)
+            all_uvd = xyz2uvd(all_xyz, K)
             # affine transform x,y coordinates
             uv1 = np.concatenate((all_uvd[:, :2], np.ones_like(all_uvd[:, :1])), 1)
             all_uvd[:, :2] = np.dot(img2bb_trans, uv1.transpose(1, 0)).transpose(1, 0)[:, :2]
